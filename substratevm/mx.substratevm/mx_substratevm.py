@@ -375,21 +375,6 @@ def truffle_args(extra_build_args):
 
 def truffle_unittest_task(extra_build_args=None):
     extra_build_args = extra_build_args or []
-
-    # ContextPreInitializationNativeImageTest can only run with its own image.
-    # See class javadoc for details.
-    truffle_context_pre_init_unittest_task(extra_build_args)
-
-    # Regular Truffle tests that can run with isolated compilation
-    truffle_tests = ['com.oracle.truffle.api.staticobject.test',
-                     'com.oracle.truffle.api.test.polyglot.ContextPolicyTest']
-
-    if '-Ob' not in extra_build_args:
-        # GR-44492:
-        truffle_tests += ['com.oracle.truffle.api.test.TruffleSafepointTest']
-
-    native_unittest(truffle_tests + truffle_args(extra_build_args) + (['-Xss1m'] if '--libc=musl' in extra_build_args else []))
-
     # White Box Truffle compilation tests that need access to compiler graphs.
     if '-Ob' not in extra_build_args:
         # GR-44492
@@ -417,10 +402,6 @@ def truffle_unittest_task(extra_build_args=None):
     finally:
         if success:
             os.unlink(logfile.name)
-
-
-def truffle_context_pre_init_unittest_task(extra_build_args):
-    native_unittest(['com.oracle.truffle.api.test.polyglot.ContextPreInitializationNativeImageTest'] + truffle_args(extra_build_args))
 
 
 def svm_gate_body(args, tasks):
@@ -456,7 +437,7 @@ def svm_gate_body(args, tasks):
             with native_image_context(IMAGE_ASSERTION_FLAGS) as native_image:
                 conditional_config_task(native_image)
 
-    with Task('Run Truffle unittests with SVM image', tasks, tags=[GraalTags.truffle_unittests]) as t:
+    with Task('Run Truffle Compiler unittests with SVM image', tasks, tags=[GraalTags.truffle_unittests]) as t:
         if t:
             with native_image_context(IMAGE_ASSERTION_FLAGS) as native_image:
                 truffle_unittest_task(args.extra_image_builder_arguments)
@@ -2543,14 +2524,24 @@ def capnp_compile(args):
  * or visit www.oracle.com if you need additional information or have any
  * questions.
  */
-//@formatter:off
-//Checkstyle: stop
-// Generated via:
-//  $ mx capnp-compile
+// @formatter:off
+// Checkstyle: stop
 """)
         for line in lines:
             if line.startswith("public final class "):
-                f.write('@SuppressWarnings("all")\n')
+                f.write(
+"""import org.graalvm.nativeimage.Platform;
+import org.graalvm.nativeimage.Platforms;
+
+/**
+ * This class contains the methods used by the Native Image Layers feature to communicate with the Cap'n Proto Java runtime.
+ * The Native Image Layers feature uses Cap'n Proto to serialize and deserialize metadata between layered build processes.
+ * This file is generated from the {@code SharedLayerSnapshotCapnProtoSchema.capnp} schema file using {@code mx capnp-compile}
+ * and should not be modified manually.
+*/
+@Platforms(Platform.HOSTED_ONLY.class)
+@SuppressWarnings("all")
+""")
             if 'public static final class Schemas {' in line:
                 break
             # Replace org.capnproto with com.oracle.svm.shaded.org.capnproto in generated code

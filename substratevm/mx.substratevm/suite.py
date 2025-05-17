@@ -908,12 +908,12 @@ suite = {
             "os_arch": {
                 "windows": {
                     "<others>": {
-                        "cflags": ["-Wall"]
+                        "cflags": ["-g", "-O2", "-Wall"]
                     }
                 },
                 "<others>": {
                     "<others>": {
-                        "cflags": ["-Wall", "-Werror"],
+                        "cflags": ["-g", "-O2", "-Wall", "-Werror"],
                     },
                 },
             },
@@ -1181,6 +1181,11 @@ suite = {
                 "sdk:NATIVEIMAGE",
                 "com.oracle.svm.configure",
             ],
+            "requiresConcealed": {
+                "jdk.internal.vm.ci": [
+                    "jdk.vm.ci.meta"
+                ],
+            },
             "checkstyle": "com.oracle.svm.test",
             "workingSets": "SVM",
             "annotationProcessors": [

@@ -797,7 +797,7 @@ class BaseGraalVmLayoutDistribution(mx.LayoutDistribution, metaclass=ABCMeta):
             return super(BaseGraalVmLayoutDistribution, self).needsUpdate(newestInput)
 
     @staticmethod
-    def _get_metadata(suites, parent_release_file=None):
+    def _get_metadata(suites, parent_release_file=None, java_version=None):
         """
         :type suites: list[mx.Suite]
         :type parent_release_file: str | None
@@ -820,7 +820,7 @@ class BaseGraalVmLayoutDistribution(mx.LayoutDistribution, metaclass=ABCMeta):
         else:
             _metadata_dict = OrderedDict()
 
-        _metadata_dict.setdefault('JAVA_VERSION', _src_jdk.version)
+        _metadata_dict.setdefault('JAVA_VERSION', java_version or _src_jdk.version)
         _metadata_dict.setdefault('OS_NAME', get_graalvm_os())
         _metadata_dict.setdefault('OS_ARCH', mx.get_arch())
         if mx.get_os_variant():
@@ -3036,7 +3036,7 @@ def _get_jvm_cfg():
 def _get_jvm_cfg_contents(cfgs_to_add):
 
     def validate_cfg_line(line, source):
-        if line.startswith('#'):
+        if line.startswith('#') or len(line.strip()) == 0:
             return
         if not line.startswith('-'):
             raise mx.abort("Invalid line in {}:\n{}".format(source, line))
@@ -3218,6 +3218,7 @@ class NativeLibraryLauncherProject(mx_native.DefaultNativeProject):
             _exe_dirs = set([dirname(p) for p in _exe_paths])
         _dynamic_cflags = [
             ('/std:c++17' if mx.is_windows() else '-std=c++17'),
+            '-O3', # Note: no -g to save 0.2MB on Linux
             '-DCP_SEP=' + os.pathsep,
             '-DDIR_SEP=' + ('\\\\' if mx.is_windows() else '/'),
             '-DGRAALVM_VERSION=' + _suite.release_version(),
