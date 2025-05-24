@@ -41,8 +41,6 @@ import com.oracle.svm.core.feature.InternalFeature;
 import com.oracle.svm.core.jdk.JNIRegistrationUtil;
 import com.oracle.svm.util.ReflectionUtil;
 
-import jdk.graal.compiler.serviceprovider.JavaVersionUtil;
-
 @AutomaticallyRegisteredFeature
 public class JavaxXmlClassAndResourcesLoaderFeature extends JNIRegistrationUtil implements InternalFeature {
 
@@ -76,19 +74,16 @@ public class JavaxXmlClassAndResourcesLoaderFeature extends JNIRegistrationUtil 
     }
 
     /**
-     * Initialize the {@code JdkCatalog#catalog} field. We do this eagerly (instead of e.g. in a
+     * Initialize the {@code CatalogHolder#catalog} field. We do this eagerly (instead of e.g. in a
      * {@link FieldValueTransformer}) to work around a race condition in
      * XMLSecurityManager#prepareCatalog (JDK-8350189).
      */
     private static void initializeJdkCatalog() {
-        if (JavaVersionUtil.JAVA_SPEC <= 21) {
-            return;
-        }
         if (ModuleLayer.boot().findModule("java.xml").isPresent()) {
-            // Ensure the JdkCatalog#catalog field is initialized.
-            Class<?> xmlSecurityManager = ReflectionUtil.lookupClass(false, "jdk.xml.internal.XMLSecurityManager");
+            // Ensure the JdkXmlConfig$CatalogHolder#catalog field is initialized.
+            Class<?> xmlSecurityManager = ReflectionUtil.lookupClass(false, "jdk.xml.internal.JdkXmlConfig$CatalogHolder");
             // The constructor call prepareCatalog which will call JdkCatalog#init.
-            ReflectionUtil.newInstance(xmlSecurityManager);
+            ReflectionUtil.readStaticField(xmlSecurityManager, "JDKCATALOG");
         }
     }
 }

@@ -119,7 +119,7 @@ import com.oracle.svm.hosted.imagelayer.SharedLayerSnapshotCapnProtoSchemaHolder
 import com.oracle.svm.hosted.jni.JNIAccessFeature;
 import com.oracle.svm.hosted.lambda.LambdaParser;
 import com.oracle.svm.hosted.meta.HostedUniverse;
-import com.oracle.svm.hosted.meta.RelocatableConstant;
+import com.oracle.svm.hosted.meta.PatchedWordConstant;
 import com.oracle.svm.hosted.reflect.ReflectionFeature;
 import com.oracle.svm.hosted.reflect.serialize.SerializationFeature;
 import com.oracle.svm.hosted.util.IdentityHashCodeUtil;
@@ -459,11 +459,10 @@ public class SVMImageLayerLoader extends ImageLayerLoader {
             String rawTargetConstructorClassName = sg.getRawTargetConstructor().toString();
             Class<?> rawDeclaringClass = imageLayerBuildingSupport.lookupClass(false, rawDeclaringClassName);
             Class<?> rawTargetConstructorClass = imageLayerBuildingSupport.lookupClass(false, rawTargetConstructorClassName);
-            SerializationSupport serializationSupport = SerializationSupport.singleton();
             Constructor<?> rawTargetConstructor = ReflectionUtil.lookupConstructor(rawTargetConstructorClass);
             Constructor<?> constructor = ReflectionFactory.getReflectionFactory().newConstructorForSerialization(rawDeclaringClass, rawTargetConstructor);
-            serializationSupport.addConstructorAccessor(rawDeclaringClass, rawTargetConstructorClass, SerializationFeature.getConstructorAccessor(constructor));
-            Class<?> constructorAccessor = serializationSupport.getSerializationConstructorAccessor(rawDeclaringClass, rawTargetConstructorClass).getClass();
+            SerializationSupport.currentLayer().addConstructorAccessor(rawDeclaringClass, rawTargetConstructorClass, SerializationFeature.getConstructorAccessor(constructor));
+            Class<?> constructorAccessor = SerializationSupport.getSerializationConstructorAccessor(rawDeclaringClass, rawTargetConstructorClass).getClass();
             metaAccess.lookupJavaType(constructorAccessor);
             return true;
         } else if (wrappedType.isLambda()) {
@@ -1446,7 +1445,7 @@ public class SVMImageLayerLoader extends ImageLayerLoader {
                 AnalysisType methodPointerType = metaAccess.lookupJavaType(MethodPointer.class);
                 int mid = constantRef.getMethodPointer().getMethodId();
                 AnalysisMethod method = getAnalysisMethodForBaseLayerId(mid);
-                RelocatableConstant constant = new RelocatableConstant(new MethodPointer(method), methodPointerType);
+                PatchedWordConstant constant = new PatchedWordConstant(new MethodPointer(method), methodPointerType);
                 values[i] = constant;
                 return constant;
             });
@@ -1460,7 +1459,7 @@ public class SVMImageLayerLoader extends ImageLayerLoader {
             Class<?>[] parameterTypes = IntStream.range(0, ref.getParameterNames().size())
                             .mapToObj(j -> ref.getParameterNames().get(j).toString())
                             .map(this::lookupBaseLayerTypeInHostVM).toArray(Class[]::new);
-            values[i] = new RelocatableConstant(new CEntryPointLiteralCodePointer(definingClass, methodName, parameterTypes), cEntryPointerLiteralPointerType);
+            values[i] = new PatchedWordConstant(new CEntryPointLiteralCodePointer(definingClass, methodName, parameterTypes), cEntryPointerLiteralPointerType);
             return true;
         } else if (constantRef.isCGlobalDataBasePointer()) {
             values[i] = new AnalysisFuture<>(() -> {

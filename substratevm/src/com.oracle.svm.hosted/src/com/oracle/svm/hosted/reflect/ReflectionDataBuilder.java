@@ -88,6 +88,7 @@ import com.oracle.svm.core.hub.ClassForNameSupport;
 import com.oracle.svm.core.hub.DynamicHub;
 import com.oracle.svm.core.reflect.SubstrateAccessor;
 import com.oracle.svm.core.util.VMError;
+import com.oracle.svm.hosted.ClassLoaderFeature;
 import com.oracle.svm.hosted.ConditionalConfigurationRegistry;
 import com.oracle.svm.hosted.FeatureImpl.BeforeAnalysisAccessImpl;
 import com.oracle.svm.hosted.LinkAtBuildTimeSupport;
@@ -145,8 +146,8 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
     private final Map<Class<?>, Throwable> recordComponentsLookupExceptions = new ConcurrentHashMap<>();
 
     // Intermediate bookkeeping
-    private final Map<Type, Set<Integer>> processedTypes = new ConcurrentHashMap<>();
-    private final Map<Class<?>, Set<Method>> pendingRecordClasses;
+    private Map<Type, Set<Integer>> processedTypes = new ConcurrentHashMap<>();
+    private Map<Class<?>, Set<Method>> pendingRecordClasses;
 
     record ConditionalTask(ConfigurationCondition condition, Consumer<ConfigurationCondition> task) {
     }
@@ -262,7 +263,7 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
         }
 
         if (allowForName) {
-            classForNameSupport.registerClass(condition, clazz);
+            classForNameSupport.registerClass(condition, clazz, ClassLoaderFeature.getRuntimeClassLoader(clazz.getClassLoader()));
 
             if (!MissingRegistrationUtils.throwMissingRegistrationErrors()) {
                 /*
@@ -554,15 +555,24 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
         registerAllDeclaredFieldsQuery(condition, false, clazz);
     }
 
+    private record AllDeclaredFieldsQuery(ConfigurationCondition condition, boolean queriedOnly, Class<?> clazz) {
+    }
+
+    private Set<AllDeclaredFieldsQuery> existingAllDeclaredFieldsQuery = ConcurrentHashMap.newKeySet();
+
     public void registerAllDeclaredFieldsQuery(ConfigurationCondition condition, boolean queriedOnly, Class<?> clazz) {
-        runConditionalInAnalysisTask(condition, (cnd) -> {
-            setQueryFlag(clazz, ALL_DECLARED_FIELDS_FLAG);
-            try {
-                registerFields(cnd, queriedOnly, clazz.getDeclaredFields());
-            } catch (LinkageError e) {
-                registerLinkageError(clazz, e, fieldLookupExceptions);
-            }
-        });
+        final var query = new AllDeclaredFieldsQuery(condition, queriedOnly, clazz);
+        if (!existingAllDeclaredFieldsQuery.contains(query)) {
+            runConditionalInAnalysisTask(condition, (cnd) -> {
+                setQueryFlag(clazz, ALL_DECLARED_FIELDS_FLAG);
+                try {
+                    registerFields(cnd, queriedOnly, clazz.getDeclaredFields());
+                } catch (LinkageError e) {
+                    registerLinkageError(clazz, e, fieldLookupExceptions);
+                }
+            });
+            existingAllDeclaredFieldsQuery.add(query);
+        }
     }
 
     private void registerFields(ConfigurationCondition cnd, boolean queriedOnly, Field[] reflectFields) {
@@ -927,7 +937,7 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
             /*
              * Reflection signature parsing will try to instantiate classes via Class.forName().
              */
-            classForNameSupport.registerClass(clazz);
+            classForNameSupport.registerClass(clazz, ClassLoaderFeature.getRuntimeClassLoader(clazz.getClassLoader()));
         } else if (type instanceof TypeVariable<?>) {
             /* Bounds are reified lazily. */
             registerTypesForGenericSignature(queryGenericInfo(((TypeVariable<?>) type)::getBounds), dimension);
@@ -1133,10 +1143,11 @@ public class ReflectionDataBuilder extends ConditionalConfigurationRegistry impl
 
     protected void afterAnalysis() {
         sealed = true;
-        processedTypes.clear();
+        processedTypes = null;
         if (!throwMissingRegistrationErrors()) {
-            pendingRecordClasses.clear();
+            pendingRecordClasses = null;
         }
+        existingAllDeclaredFieldsQuery = null;
     }
 
     @Override

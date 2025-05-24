@@ -31,6 +31,10 @@ suite = {
                 "name": "compiler",
                 "subdir": True,
             },
+            {
+                "name": "espresso-shared",
+                "subdir": True,
+            },
         ]
     },
 
@@ -337,6 +341,7 @@ suite = {
                 "com.oracle.svm.common",
                 "com.oracle.svm.shaded.org.objectweb.asm",
                 "SVM_CONFIGURE",
+                "espresso-shared:ESPRESSO_SVM",
             ],
             "requires" : [
                 "java.compiler",
@@ -812,8 +817,6 @@ suite = {
                 ],
             },
             "javaCompliance" : "22+",
-            # GR-51699
-            "forceJavac": True,
             "annotationProcessors": [
                 "compiler:GRAAL_PROCESSOR",
                 "SVM_PROCESSOR",
@@ -858,8 +861,6 @@ suite = {
                 ],
             },
             "javaCompliance" : "22+",
-            # GR-51699
-            "forceJavac": True,
             "annotationProcessors": [
                 "compiler:GRAAL_PROCESSOR",
                 "SVM_PROCESSOR",
@@ -908,12 +909,12 @@ suite = {
             "os_arch": {
                 "windows": {
                     "<others>": {
-                        "cflags": ["-Wall"]
+                        "cflags": ["-g", "-O2", "-Wall"]
                     }
                 },
                 "<others>": {
                     "<others>": {
-                        "cflags": ["-Wall", "-Werror"],
+                        "cflags": ["-g", "-O2", "-Wall", "-Werror"],
                     },
                 },
             },
@@ -1181,6 +1182,11 @@ suite = {
                 "sdk:NATIVEIMAGE",
                 "com.oracle.svm.configure",
             ],
+            "requiresConcealed": {
+                "jdk.internal.vm.ci": [
+                    "jdk.vm.ci.meta"
+                ],
+            },
             "checkstyle": "com.oracle.svm.test",
             "workingSets": "SVM",
             "annotationProcessors": [
@@ -1721,6 +1727,7 @@ suite = {
                 "compiler:GRAAL",
                 "NATIVE_IMAGE_BASE",
                 "SVM_CONFIGURE",
+                "espresso-shared:ESPRESSO_SVM",
             ],
             "moduleInfo" : {
                 "name" : "org.graalvm.nativeimage.builder",
@@ -1771,7 +1778,8 @@ suite = {
                     "org.graalvm.collections",
                     "org.graalvm.truffle.compiler",
                     "org.graalvm.nativeimage.configure",
-                    "org.graalvm.nativeimage.libgraal"
+                    "org.graalvm.nativeimage.libgraal",
+                    "org.graalvm.espresso.shared.svm",
                 ],
                 "uses" : [
                     "org.graalvm.nativeimage.Platform",

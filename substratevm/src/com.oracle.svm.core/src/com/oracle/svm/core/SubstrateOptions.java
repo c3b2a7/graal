@@ -31,6 +31,8 @@ import static jdk.graal.compiler.core.common.SpectrePHTMitigations.None;
 import static jdk.graal.compiler.core.common.SpectrePHTMitigations.Options.SpectrePHTBarriers;
 import static jdk.graal.compiler.options.OptionType.Expert;
 import static jdk.graal.compiler.options.OptionType.User;
+import static org.graalvm.nativeimage.impl.InternalPlatform.NATIVE_ONLY;
+import static org.graalvm.nativeimage.impl.InternalPlatform.PLATFORM_JNI;
 
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
@@ -50,6 +52,7 @@ import com.oracle.svm.core.c.libc.LibCBase;
 import com.oracle.svm.core.c.libc.MuslLibC;
 import com.oracle.svm.core.config.ConfigurationValues;
 import com.oracle.svm.core.heap.ReferenceHandler;
+import com.oracle.svm.core.imagelayer.ImageLayerBuildingSupport;
 import com.oracle.svm.core.option.APIOption;
 import com.oracle.svm.core.option.APIOptionGroup;
 import com.oracle.svm.core.option.AccumulatingLocatableMultiOptionValue;
@@ -62,6 +65,7 @@ import com.oracle.svm.core.option.OptionMigrationMessage;
 import com.oracle.svm.core.option.ReplacingLocatableMultiOptionValue;
 import com.oracle.svm.core.option.RuntimeOptionKey;
 import com.oracle.svm.core.option.SubstrateOptionsParser;
+import com.oracle.svm.core.pltgot.PLTGOTConfiguration;
 import com.oracle.svm.core.thread.VMOperationControl;
 import com.oracle.svm.core.util.UserError;
 import com.oracle.svm.core.util.VMError;
@@ -1156,6 +1160,14 @@ public class SubstrateOptions {
         @OptionMigrationMessage("Use the '-o' option instead.")//
         @Option(help = "Directory of the image file to be generated", type = OptionType.User)//
         public static final HostedOptionKey<String> Path = new HostedOptionKey<>(null);
+
+        /** Use {@link SubstrateOptions#hasDumpRuntimeCompiledMethodsSupport()} instead. */
+        @Option(help = "Dump the instructions of runtime compiled methods in temporary files.") //
+        public static final RuntimeOptionKey<Boolean> DumpRuntimeCompiledMethods = new RuntimeOptionKey<>(false, key -> {
+            if (key.hasBeenSet() && Platform.includedIn(Platform.WINDOWS.class)) {
+                throw UserError.invalidOptionValue(key, key.getValue(), "Dumping runtime compiled code is not supported on Windows.");
+            }
+        });
     }
 
     @Fold
@@ -1281,9 +1293,6 @@ public class SubstrateOptions {
 
     @Option(help = "Verify type states computed by the static analysis at run time. This is useful when diagnosing problems in the static analysis, but reduces peak performance significantly.", type = OptionType.Debug)//
     public static final HostedOptionKey<Boolean> VerifyTypes = new HostedOptionKey<>(false);
-
-    @Option(help = "Run reachability handlers concurrently during analysis.", type = Expert, deprecated = true, deprecationMessage = "This option was introduced to simplify migration to GraalVM 22.2 and will be removed in a future release")//
-    public static final HostedOptionKey<Boolean> RunReachabilityHandlersConcurrently = new HostedOptionKey<>(true);
 
     @Option(help = "Force many trampolines to be needed for inter-method calls. Normally trampolines are only used when a method destination is outside the range of a pc-relative branch instruction.", type = OptionType.Debug)//
     public static final HostedOptionKey<Boolean> UseDirectCallTrampolinesALot = new HostedOptionKey<>(false);
@@ -1435,4 +1444,57 @@ public class SubstrateOptions {
         return PrintClosedArenaUponThrow.getValue();
     }
 
+    @Option(help = "Avoid linker relocations for code and instead emit address computations.", type = OptionType.Expert) //
+    public static final HostedOptionKey<Boolean> RelativeCodePointers = new HostedOptionKey<>(false, SubstrateOptions::validateRelativeCodePointers);
+
+    @Fold
+    public static boolean useRelativeCodePointers() {
+        return RelativeCodePointers.getValue();
+    }
+
+    private static void validateRelativeCodePointers(HostedOptionKey<Boolean> optionKey) {
+        if (optionKey.getValue()) {
+            String enabledOption = SubstrateOptionsParser.commandArgument(optionKey, "+");
+
+            UserError.guarantee(Platform.includedIn(PLATFORM_JNI.class) || Platform.includedIn(NATIVE_ONLY.class), "%s is supported only with hardware target platforms.", enabledOption);
+
+            /*
+             * GR-59707: Dispatch tables must potentially be patched at runtime still. Method
+             * offsets for dispatch need to be passed on between layer builds rather than using
+             * symbol names.
+             */
+            UserError.guarantee(!ImageLayerBuildingSupport.buildingImageLayer(), "%s is currently not supported with layered images.", enabledOption);
+
+            // The concept of a code base would need to be introduced in the LLVM backend first.
+            UserError.guarantee(!useLLVMBackend(), "%s is currently not supported with the LLVM backend.", enabledOption);
+
+            /*
+             * Code offsets of PLT stubs cannot be predetermined because the PLT is separate from
+             * the text section and has its own base address. It would need to become a part of the
+             * text section (e.g., by turning it into a compilation unit).
+             */
+            UserError.guarantee(!PLTGOTConfiguration.isEnabled(), "%s cannot be used together with PLT/GOT.", enabledOption);
+        }
+    }
+
+    public static boolean hasDumpRuntimeCompiledMethodsSupport() {
+        return !Platform.includedIn(Platform.WINDOWS.class) && ConcealedOptions.DumpRuntimeCompiledMethods.getValue();
+    }
+
+    @Option(help = "file:doc-files/TrackDynamicAccessHelp.txt")//
+    public static final HostedOptionKey<AccumulatingLocatableMultiOptionValue.Strings> TrackDynamicAccess = new HostedOptionKey<>(
+                    AccumulatingLocatableMultiOptionValue.Strings.buildWithCommaDelimiter());
+
+    @Option(help = "Track System.getProperty(\\\"java.home\\\") usage in reachable parts of the project.")//
+    public static final HostedOptionKey<Boolean> TrackJavaHomeAccess = new HostedOptionKey<>(false);
+
+    @Option(help = "Output all System.getProperty(\\\"java.home\\\") calls in reachable parts of the project.")//
+    public static final HostedOptionKey<Boolean> TrackJavaHomeAccessDetailed = new HostedOptionKey<>(false) {
+        @Override
+        protected void onValueUpdate(EconomicMap<OptionKey<?>, Object> values, Boolean oldValue, Boolean newValue) {
+            if (newValue) {
+                TrackJavaHomeAccess.update(values, true);
+            }
+        }
+    };
 }

@@ -757,11 +757,11 @@ suite = {
       "os" : {
         "windows" : {},
         "solaris" : {
-          "cflags" : ["-g", "-Wall", "-Werror", "-m64"],
+          "cflags" : ["-g", "-O3", "-Wall", "-Werror", "-m64"],
           "ldflags" : ["-m64"],
         },
         "<others>" : {
-          "cflags" : ["-g", "-Wall", "-Werror"],
+          "cflags" : ["-g", "-O3", "-Wall", "-Werror"],
         },
       },
     },
@@ -2163,8 +2163,10 @@ suite = {
         "class": "DeliverableStandaloneArchive",
         "platformDependent": True,
         "standalone_dist": "SULONG_NATIVE_STANDALONE",
+        "language_id": "llvm",
         "community_archive_name": "llvm-community",
         "enterprise_archive_name": "llvm-unused", # should not be used as it lacks the managed toolchain
+        "enterprise_dist_name": "SULONG_NATIVE_UNUSED_ENTERPRISE_NATIVE_STANDALONE",
         "defaultBuild": False,
     },
 
@@ -2172,8 +2174,10 @@ suite = {
         "class": "DeliverableStandaloneArchive",
         "platformDependent": True,
         "standalone_dist": "SULONG_JVM_STANDALONE",
+        "language_id": "llvm",
         "community_archive_name": "llvm-community-jvm",
         "enterprise_archive_name": "llvm-unused-jvm", # should not be used as it lacks the managed toolchain
+        "enterprise_dist_name": "SULONG_NATIVE_UNUSED_ENTERPRISE_JVM_STANDALONE",
         "defaultBuild": False,
     },
 

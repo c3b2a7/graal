@@ -159,25 +159,25 @@ public class RuntimeMetadataEncoderImpl implements RuntimeMetadataEncoder {
     private final CodeInfoEncoder.Encoders encoders;
     private final ReflectionDataAccessors accessors;
     private final ReflectionDataBuilder dataBuilder;
-    private final TreeSet<HostedType> sortedTypes = new TreeSet<>(Comparator.comparingLong(t -> t.getHub().getTypeID()));
-    private final Map<HostedType, ClassMetadata> classData = new HashMap<>();
-    private final Map<HostedType, Map<Object, FieldMetadata>> fieldData = new HashMap<>();
-    private final Map<HostedType, Map<Object, MethodMetadata>> methodData = new HashMap<>();
-    private final Map<HostedType, Map<Object, ConstructorMetadata>> constructorData = new HashMap<>();
+    private TreeSet<HostedType> sortedTypes = new TreeSet<>(Comparator.comparingLong(t -> t.getHub().getTypeID()));
+    private Map<HostedType, ClassMetadata> classData = new HashMap<>();
+    private Map<HostedType, Map<Object, FieldMetadata>> fieldData = new HashMap<>();
+    private Map<HostedType, Map<Object, MethodMetadata>> methodData = new HashMap<>();
+    private Map<HostedType, Map<Object, ConstructorMetadata>> constructorData = new HashMap<>();
 
-    private final Map<HostedType, Throwable> classLookupErrors = new HashMap<>();
-    private final Map<HostedType, Throwable> fieldLookupErrors = new HashMap<>();
-    private final Map<HostedType, Throwable> methodLookupErrors = new HashMap<>();
-    private final Map<HostedType, Throwable> constructorLookupErrors = new HashMap<>();
-    private final Map<HostedType, Throwable> recordComponentLookupErrors = new HashMap<>();
+    private Map<HostedType, Throwable> classLookupErrors = new HashMap<>();
+    private Map<HostedType, Throwable> fieldLookupErrors = new HashMap<>();
+    private Map<HostedType, Throwable> methodLookupErrors = new HashMap<>();
+    private Map<HostedType, Throwable> constructorLookupErrors = new HashMap<>();
+    private Map<HostedType, Throwable> recordComponentLookupErrors = new HashMap<>();
 
-    private final Set<AccessibleObjectMetadata> heapData = new HashSet<>();
+    private Set<AccessibleObjectMetadata> heapData = new HashSet<>();
 
-    private final Map<AccessibleObject, byte[]> annotationsEncodings = new HashMap<>();
-    private final Map<Executable, byte[]> parameterAnnotationsEncodings = new HashMap<>();
-    private final Map<Method, byte[]> annotationDefaultEncodings = new HashMap<>();
-    private final Map<AccessibleObject, byte[]> typeAnnotationsEncodings = new HashMap<>();
-    private final Map<Executable, byte[]> reflectParametersEncodings = new HashMap<>();
+    private Map<AccessibleObject, byte[]> annotationsEncodings = new HashMap<>();
+    private Map<Executable, byte[]> parameterAnnotationsEncodings = new HashMap<>();
+    private Map<Method, byte[]> annotationDefaultEncodings = new HashMap<>();
+    private Map<AccessibleObject, byte[]> typeAnnotationsEncodings = new HashMap<>();
+    private Map<Executable, byte[]> reflectParametersEncodings = new HashMap<>();
 
     public RuntimeMetadataEncoderImpl(SnippetReflectionProvider snippetReflection, CodeInfoEncoder.Encoders encoders) {
         this.snippetReflection = snippetReflection;
@@ -203,7 +203,7 @@ public class RuntimeMetadataEncoderImpl implements RuntimeMetadataEncoder {
 
     private void registerField(HostedType declaringType, Object field, FieldMetadata metadata) {
         if (ImageLayerBuildingSupport.buildingImageLayer() &&
-                        !LayeredRuntimeMetadataSingleton.singleton().registerField(field, declaringType.getWrapped().getUniverse().getBigbang().getMetaAccess())) {
+                        !LayeredRuntimeMetadataSingleton.singleton().shouldRegisterField(field, declaringType.getWrapped().getUniverse().getBigbang().getMetaAccess(), metadata)) {
             return;
         }
         addType(declaringType);
@@ -219,7 +219,7 @@ public class RuntimeMetadataEncoderImpl implements RuntimeMetadataEncoder {
 
     private void registerMethod(HostedType declaringType, Object method, MethodMetadata metadata) {
         if (ImageLayerBuildingSupport.buildingImageLayer() &&
-                        !LayeredRuntimeMetadataSingleton.singleton().registerMethod(method, declaringType.getWrapped().getUniverse().getBigbang().getMetaAccess())) {
+                        !LayeredRuntimeMetadataSingleton.singleton().shouldRegisterMethod(method, declaringType.getWrapped().getUniverse().getBigbang().getMetaAccess(), metadata)) {
             return;
         }
         addType(declaringType);
@@ -235,7 +235,7 @@ public class RuntimeMetadataEncoderImpl implements RuntimeMetadataEncoder {
 
     private void registerConstructor(HostedType declaringType, Object constructor, ConstructorMetadata metadata) {
         if (ImageLayerBuildingSupport.buildingImageLayer() &&
-                        !LayeredRuntimeMetadataSingleton.singleton().registerMethod(constructor, declaringType.getWrapped().getUniverse().getBigbang().getMetaAccess())) {
+                        !LayeredRuntimeMetadataSingleton.singleton().shouldRegisterMethod(constructor, declaringType.getWrapped().getUniverse().getBigbang().getMetaAccess(), metadata)) {
             return;
         }
         addType(declaringType);
@@ -445,7 +445,7 @@ public class RuntimeMetadataEncoderImpl implements RuntimeMetadataEncoder {
     public void addReflectionExecutableMetadata(MetaAccessProvider metaAccess, HostedMethod hostedMethod, ConditionalRuntimeValue<Executable> conditionalMethod, Object accessor) {
         boolean isMethod = !hostedMethod.isConstructor();
         HostedType declaringType = hostedMethod.getDeclaringClass();
-        String name = isMethod ? hostedMethod.getName() : null;
+        String name = isMethod ? hostedMethod.getReflectionName() : null;
         HostedType[] parameterTypes = getParameterTypes(hostedMethod);
         /* Reflect method because substitution of Object.hashCode() is private */
         Executable reflectMethod = conditionalMethod.getValueUnconditionally();
@@ -643,7 +643,7 @@ public class RuntimeMetadataEncoderImpl implements RuntimeMetadataEncoder {
     public void addReachableExecutableMetadata(HostedMethod executable) {
         boolean isMethod = !executable.isConstructor();
         HostedType declaringType = executable.getDeclaringClass();
-        String name = isMethod ? executable.getName() : null;
+        String name = isMethod ? executable.getReflectionName() : null;
         String[] parameterTypeNames = getParameterTypeNames(executable);
 
         /* Fill encoders with the necessary values. */
@@ -853,7 +853,35 @@ public class RuntimeMetadataEncoderImpl implements RuntimeMetadataEncoder {
         }
         install(buf);
         /* Enable field recomputers in reflection objects to see the computed values */
-        ImageSingletons.add(EncodedRuntimeMetadataSupplier.class, this);
+        EncodedRuntimeMetadataSupplierImpl supplierImpl = new EncodedRuntimeMetadataSupplierImpl(annotationsEncodings, parameterAnnotationsEncodings, annotationDefaultEncodings,
+                        typeAnnotationsEncodings, reflectParametersEncodings);
+        clearDataAfterEncoding();
+        ImageSingletons.add(EncodedRuntimeMetadataSupplier.class, supplierImpl);
+    }
+
+    /**
+     * After the buffer has been created and installed, all other data can be cleaned.
+     */
+    private void clearDataAfterEncoding() {
+        this.annotationsEncodings = null;
+        this.parameterAnnotationsEncodings = null;
+        this.annotationDefaultEncodings = null;
+        this.typeAnnotationsEncodings = null;
+        this.reflectParametersEncodings = null;
+
+        this.sortedTypes = null;
+        this.classData = null;
+        this.fieldData = null;
+        this.methodData = null;
+        this.constructorData = null;
+
+        this.classLookupErrors = null;
+        this.fieldLookupErrors = null;
+        this.methodLookupErrors = null;
+        this.constructorLookupErrors = null;
+        this.recordComponentLookupErrors = null;
+
+        this.heapData = null;
     }
 
     private int encodeErrorIndex(Throwable error) {
@@ -1221,7 +1249,15 @@ public class RuntimeMetadataEncoderImpl implements RuntimeMetadataEncoder {
             return ImageSingletons.lookup(LayeredRuntimeMetadataSingleton.class);
         }
 
-        public boolean registerMethod(Object method, AnalysisMetaAccess metaAccess) {
+        public boolean shouldRegisterMethod(Object method, AnalysisMetaAccess metaAccess, AccessibleObjectMetadata metadata) {
+            if (!metadata.complete) {
+                /*
+                 * The method should be added to the list of registered methods only if the metadata
+                 * is complete. Incomplete metadata should always be registered and should not be
+                 * counted as the only metadata registered for a given method.
+                 */
+                return true;
+            }
             if (method instanceof AnalysisMethod analysisMethod) {
                 return registeredMethods.add(analysisMethod.getId());
             } else if (method instanceof HostedMethod hostedMethod) {
@@ -1234,7 +1270,10 @@ public class RuntimeMetadataEncoderImpl implements RuntimeMetadataEncoder {
             return true;
         }
 
-        public boolean registerField(Object field, AnalysisMetaAccess metaAccess) {
+        public boolean shouldRegisterField(Object field, AnalysisMetaAccess metaAccess, AccessibleObjectMetadata metadata) {
+            if (!metadata.complete) {
+                return true;
+            }
             if (field instanceof AnalysisField analysisField) {
                 return registeredFields.add(analysisField.getId());
             } else if (field instanceof HostedField hostedField) {
@@ -1269,6 +1308,42 @@ public class RuntimeMetadataEncoderImpl implements RuntimeMetadataEncoder {
             Set<Integer> registeredMethods = SVMImageLayerLoader.streamInts(reader.getMethods()).boxed().collect(Collectors.toCollection(HashSet::new));
             Set<Integer> registeredFields = SVMImageLayerLoader.streamInts(reader.getFields()).boxed().collect(Collectors.toCollection(HashSet::new));
             return new LayeredRuntimeMetadataSingleton(registeredMethods, registeredFields);
+        }
+    }
+
+    /**
+     * Container for data required in later phases. Cleaner separation, rest of
+     * RuntimeMetadataEncoderImpl can be cleaned after encoding.
+     */
+    public record EncodedRuntimeMetadataSupplierImpl(Map<AccessibleObject, byte[]> annotationsEncodings,
+                    Map<Executable, byte[]> parameterAnnotationsEncodings,
+                    Map<Method, byte[]> annotationDefaultEncodings,
+                    Map<AccessibleObject, byte[]> typeAnnotationsEncodings,
+                    Map<Executable, byte[]> reflectParametersEncodings) implements EncodedRuntimeMetadataSupplier {
+
+        @Override
+        public byte[] getAnnotationsEncoding(AccessibleObject object) {
+            return annotationsEncodings.get(object);
+        }
+
+        @Override
+        public byte[] getParameterAnnotationsEncoding(Executable object) {
+            return parameterAnnotationsEncodings.get(object);
+        }
+
+        @Override
+        public byte[] getAnnotationDefaultEncoding(Method object) {
+            return annotationDefaultEncodings.get(object);
+        }
+
+        @Override
+        public byte[] getTypeAnnotationsEncoding(AccessibleObject object) {
+            return typeAnnotationsEncodings.get(object);
+        }
+
+        @Override
+        public byte[] getReflectParametersEncoding(Executable object) {
+            return reflectParametersEncodings.get(object);
         }
     }
 }
